@@ -13,6 +13,7 @@ def test_login_and_list(authed):
 
 
 def test_extract_then_load(authed):
+    """整轮抽取按声明顺序流表，整轮落库把已抽取的表落库。"""
     items = authed.get("/api/pipelines").json()["items"]
     pid = items[0]["id"]
     ex = authed.post(f"/api/pipelines/{pid}/extract")

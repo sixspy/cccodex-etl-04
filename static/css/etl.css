@@ -130,3 +130,161 @@ button.ghost {
 .kv { margin: 0.35rem 0; }
 .kv b { display: inline-block; min-width: 5.5rem; color: var(--muted); font-weight: 600; }
 .empty { color: var(--muted); padding: 1rem 0; }
+
+/* ------------------------------------------------------------------
+   同源多表抽取顺序锁：表清单总览 / 顺序板 / 跳表设置
+   ------------------------------------------------------------------ */
+
+.stack { display: grid; gap: 1rem; align-content: start; }
+
+.pipe { align-items: flex-start; }
+.pipe-main { min-width: 0; }
+.pipe-title { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.policy-tag {
+  background: #ffe2c6;
+  color: var(--accent);
+  border: 1px solid #e2b48c;
+}
+.small { font-size: 0.78rem; }
+.block { display: block; margin-top: 0.2rem; }
+.inline { color: var(--muted); font-weight: 600; margin-left: 1.2rem; }
+
+.occupy {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.6rem;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: #fff2e2;
+}
+.occupy.busy { border-color: var(--accent); background: #ffe3c4; }
+.occupy-label { font-weight: 700; color: var(--accent); font-size: 0.8rem; }
+
+.legend {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.badge {
+  display: inline-block;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-left: 0.35rem;
+  white-space: nowrap;
+}
+.badge.lock { background: #f6d2c2; color: #8f2d0c; border: 1px solid #d98a6c; }
+.badge.align { background: #fff0bf; color: #7d5a00; border: 1px solid #e0bc5a; }
+.badge.race { background: #e7d7f6; color: #4a2a75; border: 1px solid #b79ada; }
+.badge.busy { background: #ffd9a8; color: #7a4200; border: 1px solid #e0a259; }
+.badge + .muted { margin-left: 0.2rem; }
+
+.board-head, .table-row {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr) 7.5rem auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+.board-head {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 0.25rem 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+.table-row {
+  padding: 0.5rem 0.35rem;
+  border-bottom: 1px dashed var(--line);
+  background: transparent;
+}
+.table-row.locked { background: #fff0e7; }
+.table-row.aligned { background: #fffbe8; }
+.table-row.busy { background: #fff4df; }
+.col-seq { text-align: center; }
+.seq {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: #efd3b5;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.col-name { min-width: 0; }
+.table-name { word-break: break-all; }
+.col-ops { display: flex; gap: 0.3rem; justify-content: flex-end; flex-wrap: wrap; }
+.tiny {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
+  border-radius: 6px;
+}
+.tiny:disabled { opacity: 0.45; cursor: not-allowed; }
+.tag.align { background: #fff0bf; color: #7d5a00; }
+.tag.busy { background: #ffd9a8; color: #7a4200; }
+
+.msg { margin-top: 0.7rem; font-size: 0.88rem; color: var(--ok); }
+.msg.err { color: #9b1c1c; }
+.alert {
+  margin: 0.5rem 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #d98a6c;
+  border-radius: 6px;
+  background: #ffe4d6;
+  color: #8f2d0c;
+  font-size: 0.86rem;
+}
+.inline-alert { margin-left: 0.6rem; padding: 0.2rem 0.5rem; }
+
+.records { margin-top: 1rem; }
+.records h3 { margin: 0 0 0.5rem; font-size: 0.92rem; }
+.record {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: 0.35rem 0.4rem;
+  border-bottom: 1px dashed var(--line);
+  font-size: 0.84rem;
+}
+.record-reason { color: var(--muted); font-size: 0.78rem; }
+
+.policy-option {
+  padding: 0.6rem 0.7rem;
+  margin-bottom: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  background: #fffdf8;
+}
+.policy-option.chosen { border-color: var(--accent); background: #fff0e0; }
+.policy-option-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+.radio {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  display: inline-block;
+}
+.radio.on { border-color: var(--accent); background: var(--accent); }
+.note-field { margin-top: 0.5rem; }
+textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.3rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font);
+  resize: vertical;
+}
+.add-table { margin-top: 1rem; padding-top: 0.7rem; border-top: 1px dashed var(--line); }
+.add-row { display: flex; gap: 0.4rem; margin-top: 0.3rem; }
+.add-row input { margin-top: 0; flex: 1; }

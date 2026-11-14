@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>抽取转换加载台</title>
+  <title>抽取转换加载台 · 同源多表顺序锁</title>
   <link rel="stylesheet" href="/static/css/etl.css" />
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 </head>
@@ -14,42 +14,194 @@
       <span class="who">{{ me }}</span>
       <button class="ghost" @click="logout">退出</button>
     </header>
-    <p class="muted">基线能力：管道列表、抽取、落库。后续题面在此叠加增量水位、清洗规则、并发争用等。</p>
+    <p class="muted">
+      同源多表按声明顺序抽取，表序由服务端裁定。上游未齐时按跳表策略处理：
+      禁止跳表写顺序锁，或允许跳表标待对齐且禁止落库。
+    </p>
+
     <div class="board">
+      <!-- 表清单总览 -->
       <section class="panel">
-        <h2>管道列表</h2>
+        <h2>表清单总览</h2>
         <div v-if="!items.length" class="empty">暂无管道</div>
         <div
           v-for="p in items"
           :key="p.id"
-          class="row"
+          class="row pipe"
           :class="{ active: current && current.id === p.id }"
           @click="open(p.id)"
         >
-          <div>
-            <div>{{ p.title }}</div>
+          <div class="pipe-main">
+            <div class="pipe-title">
+              {{ p.title }}
+              <span class="tag policy-tag">{{ p.policy.policy_title }}</span>
+            </div>
             <div class="code">{{ p.code }} · {{ p.source_uri }}</div>
+            <div class="muted small">
+              表 {{ p.summary.table_count }} 张
+              <span v-if="p.summary.aligned">· 待对齐 {{ p.summary.aligned }}</span>
+              <span v-if="p.summary.order_locked">· 顺序锁 {{ p.summary.order_locked }}</span>
+            </div>
           </div>
           <span class="tag" :class="tagClass(p.status)">{{ p.status }}</span>
         </div>
       </section>
-      <section class="panel">
-        <h2>管道详情</h2>
-        <div v-if="!current" class="empty">点左侧一条查看抽取与落库状态</div>
-        <template v-else>
-          <p class="kv"><b>题名</b>{{ current.title }}</p>
-          <p class="kv"><b>编码</b><span class="code">{{ current.code }}</span></p>
-          <p class="kv"><b>源地址</b><span class="code">{{ current.source_uri }}</span></p>
-          <p class="kv"><b>状态</b><span class="tag" :class="tagClass(current.status)">{{ current.status }}</span></p>
-          <p class="kv"><b>已抽取</b>{{ current.extracted }}</p>
-          <p class="kv"><b>已落库</b>{{ current.loaded }}</p>
-          <div class="actions">
-            <button @click="extract" :disabled="busy">执行抽取</button>
-            <button class="ghost" @click="load" :disabled="busy">执行落库</button>
+
+      <div class="stack">
+        <!-- 管道详情 -->
+        <section class="panel" v-if="board">
+          <h2>管道详情</h2>
+          <p class="kv"><b>题名</b>{{ board.pipeline.title }}</p>
+          <p class="kv"><b>编码</b><span class="code">{{ board.pipeline.code }}</span></p>
+          <p class="kv"><b>源地址</b><span class="code">{{ board.pipeline.source_uri }}</span></p>
+          <p class="kv">
+            <b>状态</b>
+            <span class="tag" :class="tagClass(board.pipeline.status)">{{ board.pipeline.status }}</span>
+          </p>
+          <p class="kv"><b>跳表策略</b>{{ board.policy.policy_title }}</p>
+          <p class="kv"><b>当日口径</b><span class="code">{{ board.policy.policy_day }}</span></p>
+          <p class="kv"><b>口径说明</b>{{ board.policy.policy_note }}</p>
+          <p v-if="board.policy.policy_mismatch" class="alert">
+            跳表策略偏了：说明与所选当日口径不一致，抽取已被服务端拦截。
+          </p>
+          <p class="kv">
+            <b>已抽取</b>{{ board.pipeline.extracted }}
+            <b class="inline">已落库</b>{{ board.pipeline.loaded }}
+          </p>
+        </section>
+
+        <!-- 顺序板 -->
+        <section class="panel">
+          <h2>
+            顺序板
+            <span v-if="board" class="tag policy-tag">{{ board.policy.policy_title }}</span>
+          </h2>
+          <div v-if="!board" class="empty">点左侧一条管道查看顺序板</div>
+          <template v-else>
+            <div class="occupy" :class="{ busy: !!board.occupancy && board.occupancy.busy }">
+              <span class="occupy-label">抽取占用</span>
+              <span v-if="board.occupancy && board.occupancy.busy">
+                {{ board.occupancy.table_name }} 正在抽取流程中，其它表本次不可抽取
+              </span>
+              <span v-else class="muted">空闲</span>
+            </div>
+
+            <div class="legend">
+              <span class="badge lock">顺序锁</span>
+              <span class="muted small">上游未齐、按策略禁止抽取</span>
+              <span class="badge align">待对齐</span>
+              <span class="muted small">允许跳表抽取但禁止落库</span>
+            </div>
+
+            <div class="board-head">
+              <span class="col-seq">序</span>
+              <span class="col-name">表名</span>
+              <span class="col-state">状态</span>
+              <span class="col-ops">操作</span>
+            </div>
+            <div
+              v-for="(t, idx) in board.tables"
+              :key="t.id"
+              class="table-row"
+              :class="{ locked: t.order_locked, aligned: t.align_pending, busy: t.status === '抽取中' }"
+            >
+              <span class="col-seq"><span class="seq">{{ t.seq }}</span></span>
+              <span class="col-name">
+                <span class="code table-name">{{ t.name }}</span>
+                <span v-if="t.order_locked" class="badge lock">顺序锁</span>
+                <span v-if="t.align_pending" class="badge align">待对齐</span>
+                <span v-if="t.status === '抽取中'" class="badge busy">占用中</span>
+                <span v-if="t.missing_upstream.length" class="muted small block">
+                  缺上游：{{ t.missing_upstream.join('、') }}
+                </span>
+              </span>
+              <span class="col-state">
+                <span class="tag" :class="t.status_tag">{{ t.status }}</span>
+              </span>
+              <span class="col-ops">
+                <button
+                  class="tiny"
+                  @click="extractTable(t)"
+                  :disabled="busy || !t.extractable"
+                  :title="t.order_locked ? '顺序锁：上游未齐，禁止抽取' : ''"
+                >抽取</button>
+                <button class="tiny ghost" @click="loadTable(t)" :disabled="busy || !t.loadable">落库</button>
+                <button class="tiny ghost" @click="move(t, -1)" :disabled="busy || orderFrozen || idx === 0" title="上移">↑</button>
+                <button class="tiny ghost" @click="move(t, 1)" :disabled="busy || orderFrozen || idx === board.tables.length - 1" title="下移">↓</button>
+              </span>
+            </div>
+            <p v-if="orderFrozen" class="muted small">
+              有表仍在抽取流程里，服务端已冻结表顺序，暂不可改序。
+            </p>
+
+            <p v-if="msg" class="msg" :class="{ err: !!msgErr }">{{ msg }}</p>
+
+            <!-- 顺序锁记录 -->
+            <div class="records">
+              <h3>顺序锁记录</h3>
+              <p v-if="!board.order_locks.length" class="muted small">暂无顺序锁</p>
+              <div v-for="l in board.order_locks" :key="'l'+l.id" class="record">
+                <span class="badge lock">顺序锁</span>
+                <span class="code">{{ l.table_name }}</span>
+                <span class="muted small">缺上游 {{ l.missing_upstream }} · {{ l.created_at }}</span>
+                <span class="record-reason">{{ l.reason }}</span>
+              </div>
+            </div>
+
+            <!-- 表序抢占记录 -->
+            <div class="records">
+              <h3>表序抢占记录</h3>
+              <p v-if="!board.races.length" class="muted small">暂未发生同刻争抢</p>
+              <div v-for="r in board.races" :key="'r'+r.id" class="record">
+                <span class="badge race">表序争抢失败</span>
+                <span class="code">{{ r.table_name }}</span>
+                <span class="muted small">让位 {{ r.won_table_name }} · {{ r.created_at }}</span>
+                <span class="record-reason">{{ r.reason }}</span>
+              </div>
+            </div>
+          </template>
+        </section>
+
+        <!-- 跳表设置 -->
+        <section class="panel" v-if="board">
+          <h2>跳表设置</h2>
+          <p class="muted small">
+            选定后写入当日口径说明，锁死到 {{ board.policy.policy_day }}。
+          </p>
+          <div
+            v-for="opt in board.policy.policy_options"
+            :key="opt.value"
+            class="policy-option"
+            :class="{ chosen: draftPolicy === opt.value }"
+            @click="choosePolicy(opt.value)"
+          >
+            <div class="policy-option-head">
+              <span class="radio" :class="{ on: draftPolicy === opt.value }"></span>
+              <b>{{ opt.title }}</b>
+            </div>
+            <div class="muted small">{{ opt.label }}</div>
+            <div class="muted small">{{ opt.note }}</div>
           </div>
-          <p v-if="msg" class="muted">{{ msg }}</p>
-        </template>
-      </section>
+          <label class="note-field">
+            口径说明
+            <textarea v-model="draftNote" rows="3" @input="dirty = true"></textarea>
+          </label>
+          <div class="actions">
+            <button @click="savePolicy" :disabled="busy">写入说明</button>
+            <span v-if="board.policy.policy_mismatch" class="alert inline-alert">
+              跳表策略偏了
+            </span>
+          </div>
+          <div class="add-table">
+            <label>新增表名</label>
+            <div class="add-row">
+              <input v-model="newName" placeholder="表名（空表名会被拒绝）" @keyup.enter="addTable" />
+              <button class="ghost" @click="addTable" :disabled="busy">入清单</button>
+            </div>
+            <p v-if="addMsg" class="muted small">{{ addMsg }}</p>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
   <script src="/static/js/app.js"></script>
